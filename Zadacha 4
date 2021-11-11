@@ -1,2 +1,195 @@
-.
-Sdv
+import csv
+import math
+import numpy as np
+import matplotlib.pyplot as plt
+from numpy import *
+import sympy
+from prettytable import PrettyTable
+
+def print_table(col1, col2, col3):
+    table = PrettyTable()
+    table.add_column("x[i]", col1)
+    table.add_column("y[i]", col2)
+    table.add_column("f[i]", col3)
+    print(table)
+		
+def generate_csv():
+    with open('data.csv', mode='w') as csv_file:
+        test_writer = csv.writer(csv_file, delimiter=';')
+        x = [-22, -144, 10, 431, 42, 11, 212, 1222]
+        y = [3.49, 1.31, 20, 1.441, 13.19, 145, 12, 940]
+        for i in zip(x, y):
+            test_writer.writerow(i)
+						
+						
+def read_csv(file):
+    x = []
+    y = []
+    with open(file) as csv_file:
+        reader = csv.reader(csv_file, razdel=";")
+        for row in reader:
+            x.append(float(row[0]))
+            y.append(float(row[1]))
+    return x, y
+		
+
+#интерполяция методом лагранжа
+n = int(input('Введите количество пар точек: '))
+x = []
+y = []
+for i in range(n):
+  xx, yy = map(float, input().split())
+  x.append(xx)
+  y.append(yy)
+def lagranz(x,y,t):
+    z=0
+    for j in range(len(y)):
+        p1 = 1
+        p2 = 1
+        for i in range(len(x)):
+            if i != j: 
+                p1 = p1 * (t - x[i])
+                p2 = p2 * (x[j] - x[i])
+        z = z + y[j] * p1 / p2
+    return z
+xnew = np.linspace(np.min(x), np.max(x), 100)
+ynew = [lagranz(x, y, i) for i in xnew]
+plt.plot(x, y, 'o', xnew, ynew)
+plt.grid(True)
+plt.show()
+
+
+#интерполяция методом Ньютона
+n = int(input('Введите количество пар точек: '))
+x = []
+y = []
+for i in range(n):
+  xx, yy = map(float, input().split())
+  x.append(xx)
+  y.append(yy)
+def newton(xx, yy):
+    x0 = sympy.symbols('x')
+    n_res = len(xx)
+
+    def coefficient(x, y):
+        m = len(x)
+        x = np.copy(x)
+        a = np.copy(y)
+        h = x[1] - x[0]
+        for k in range(1, m):
+            a[k:m] = (a[k:m] - a[k - 1]) / h
+        return a
+
+    def first(x, y):
+        x_res = sympy.symbols('x')
+        a = coefficient(x, y)
+        res = 0
+        for i in range(len(a)):
+            factor = a[i]
+            for j in range(i):
+                factor *= (x_res - x[j])
+            res += factor
+        return sympy.simplify(res)
+
+    def second(x, y):
+        x_res = sympy.symbols('x')
+        a = coefficient(x[::-1], y[::-1])
+        n = len(a)
+        res = 0
+        for i in range(n):
+            factor = a[i]
+            for j in range(n - 1, n - 1 - i, -1):
+                factor *= (x_res - x[j])
+            res += factor
+        return sympy.simplify(res)
+
+    res_1, res_2 = first(xx, yy), second(xx, yy)
+
+    print("Интерполяция вперед:")
+    print_table(xx, yy, [res_1.subs(x0, xx[i]) for i in range(n_res)])
+    print("Интерполяционный многочлен Ньютона:", res_1)
+    print("Интерполяция назад:")
+    print_table(xx, yy, [res_2.subs(x0, xx[i]) for i in range(n_res)])
+    print("Интерполяционный многочлен Ньютона:", res_2)
+newton(x, y)
+
+
+#аппроксимация линейной функцией
+n = int(input('Введите количество пар точек: '))
+x = []
+y = []
+for i in range(n):
+  xx, yy = map(float, input().split())
+  x.append(xx)
+  y.append(yy)
+def liner_fitting(data_x, data_y):
+      size = len(data_x);
+      i = 0
+      sum_xy = 0
+      sum_y = 0
+      sum_x = 0
+      sum_sqare_x = 0
+      average_x = 0
+      average_y = 0
+      while i < size:
+          sum_xy += data_x[i] * data_y[i]
+          sum_y += data_y[i]
+          sum_x += data_x[i]
+          sum_sqare_x += data_x[i] * data_x[i]
+          i += 1
+      average_x = sum_x / size
+      average_y = sum_y / size
+      return_k = (size * sum_xy - sum_x * sum_y) / (size * sum_sqare_x - sum_x * sum_x)
+      return_b = average_y - average_x * return_k
+      return [return_k, return_b]
+ 
+def calculate(data_x, k, b):
+    datay = []
+    for x in data_x:
+        datay.append(k * x + b)
+    return datay
+ 
+def draw(data_x, data_y_new, data_y_old):
+    plt.plot(data_x, data_y_new, color = "red")
+    plt.scatter(data_x, data_y_old)
+    plt.show()
+ 
+parameter = liner_fitting(x, y)
+draw_data = calculate(x, parameter[0], parameter[1])
+draw(x,draw_data,y)
+
+
+
+#аппроксимация квадратичной функцией
+
+def quadratic(x, y):
+    n = len(x)
+    xx = sympy.Symbol('x')
+    s1, s2, s3, s4, s5, s6, s7 = 0, 0, 0, 0, 0, 0, 0
+    for i in range(n):
+        s1 += x[i] ** 4
+        s2 += x[i] ** 3
+        s3 += x[i] ** 2
+        s4 += x[i]
+        s5 += x[i] ** 2 * y[i]
+        s6 += x[i] * y[i]
+        s7 += y[i]
+
+    a = [[0] * 3 for i in range(3)]
+    b = [0] * 3
+    a[0][0], a[0][1], a[0][2] = s1, s2, s3
+    a[1][0], a[1][1], a[1][2] = s2, s3, s4
+    a[2][0], a[2][1], a[2][2] = s3, s4, n
+    b[0], b[1], b[2] = s5, s6, s7
+
+    c2, c1, c0 = list(np.linalg.solve(a, b))
+    yy = sympy.simplify(c0 + c1 * xx + c2 * xx ** 2)
+    f = [yy.subs(xx, x[i]) for i in range(n)]
+
+    print("Апроксимация квадратичной функцией:")
+    print_table(x, y, f)
+    print("Вид апроксимирующей функции:", yy)
+    print("Величина дисперсии:", math.sqrt(sum([(y[i] - f[i]) ** 2 for i in range(len(x))])))
+quadratic(x, y)
+
+
