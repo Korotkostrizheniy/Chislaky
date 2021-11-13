@@ -193,3 +193,563 @@ def quadratic(x, y):
 quadratic(x, y)
 
 
+
+#Задание 2
+
+import sympy
+import scipy.optimize
+from prettytable import PrettyTable
+import math
+import numpy as np
+import csv
+from random import uniform
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+def generate_csv_1():
+    with open('test.csv', mode='w') as employee_file:
+        test_writer = csv.writer(employee_file, delimiter=';')
+        x = np.linspace(1, 8, 50)
+        f = lambda x: np.sin(x)
+        y = [f(x) for x in x]
+        for i in zip(x, y):
+            test_writer.writerow(i)
+
+
+def generate_csv_2():
+    with open('task2.2.csv', mode='w') as employee_file:
+        test_writer = csv.writer(employee_file, delimiter=';')
+        x = np.linspace(-5000, 5000, 10000)
+        f = lambda x: x ** 2 + 2 * x + 3
+        y = [f(x) + uniform(-0.1 * x, 0.1 * x) for x in x]
+        for i in zip(x, y):
+            test_writer.writerow(i)
+
+
+def read_csv(path_to_file):
+    x = []
+    y = []
+    with open(path_to_file) as csv_file:
+        reader = csv.reader(csv_file, delimiter=";")
+        for row in reader:
+            x.append(float(row[0]))
+            y.append(float(row[1]))
+    return x, y
+
+
+def print_table(col1, col2, col3):
+    table = PrettyTable()
+    table.add_column("x[i]", col1)
+    table.add_column("y[i]", col2)
+    table.add_column("f[i]", col3)
+    print(table)
+    
+generate_csv_1()
+x_list, y_list = read_csv('test.csv')
+
+# Если хотите выбрать свой файл, то запустите данную ячейку с кодом
+
+from google.colab import files
+
+uploaded = files.upload()
+
+for fn in uploaded.keys():
+    print("User uploaded file «{name}» with length {length} bytes".format(name=fn, length=len(uploaded[fn])))
+    
+#Интерполяция методом Лагранжа    
+
+def chebishevPoints(x_values, y_values, n):
+    a = min(x_values)
+    b = max(y_values)
+    result = []
+    for i in range(1, n+1):
+      result.append(0.5*(a+b) + 0.5*(b-a)*np.cos((2*i-1)/2/n*np.pi))
+    return result
+
+
+def lagrx(x_values, y_values):
+    ratio = (max(x_values)-min(x_values))/len(x_values)
+    if len(x_values) >= 60 and ratio < 1:
+        result = lagr_cheb(x_values, y_values)
+        if result is None:
+            return lagrx_standart(x_values, y_values)
+        return result
+    else:
+        return lagrx_standart(x_values, y_values)
+
+
+def lagrx_standart(x_values, y_values):
+    x0 = sympy.Symbol('x')
+    s = 0
+    for i in range(len(x_values)):
+      t1 = 1
+      t2 = 1
+      for j in range(len(x_values)):
+        t1 *= x0-x_values[j] if i!=j else 1
+        t2 *= x_values[i] - x_values[j] if i!=j else 1
+      s += y_values[i]*(t1/t2)
+    return x_values, y_values, [sympy.simplify(s).subs(x0, x_values[i]) for i in x_values]
+
+def lagr_cheb(x_values, y_values):
+    x0 = sympy.Symbol('x')
+
+    rounded_x = [round(i, 1) for i in x_values]
+    last_poly = None
+    last_error = None
+
+    for power in range(3, 50):
+      xx = list(set(rounded_x) & set(round(i, 1) for i in chebishevPoints(x_values,y_values, power)))
+      s = 0
+      if len(xx) != power:
+        continue
+
+      for i in range(len(xx)):
+        t1 = 1
+        t2 = 1
+        for j in range(len(xx)):
+          t1 *= x0-xx[j] if i!=j else 1
+          t2 *= xx[i] - xx[j] if i!=j else 1
+        s += y_values[rounded_x.index(xx[i])]*(t1/t2)
+        
+      error = lagr_error(x_values, y_values, sympy.lambdify(x0, s))
+      if last_error is not None and error > last_error*2:
+        return x_values, y_values, [last_poly.subs(x0, x_values[i]) for i in x_values]
+      if (last_error is None or last_error > error):
+        last_error = error
+        last_poly = s
+    
+    if last_poly is not None:
+      return x_values, y_values, [last_poly.subs(x0, x_values[i]) for i in x_values]
+    return last_poly
+
+def lagr_error(x_values, y_values, poly):
+    maxx = 0
+    for i, x in enumerate(x_values):
+      m = abs(y_values[i]-poly(x))
+      if m > maxx:
+        maxx = m
+    return maxx
+    
+#Интерполяция методом Ньютона    
+
+def newtons_interpolation(x_values, y_values, forward_or_backward):
+    x0 = sympy.symbols('x')
+    n_res = len(x_values)
+
+    def poly_newton_coefficient(x, y):
+        m = len(x)
+        x = np.copy(x)
+        a = np.copy(y)
+        h = x[1] - x[0]
+        for k in range(1, m):
+            a[k:m] = (a[k:m] - a[k - 1]) / h
+        return a
+
+    def newton_first(x, y):
+        x_res = sympy.symbols('x')
+        a = poly_newton_coefficient(x, y)
+        res = 0
+        for i in range(len(a)):
+            factor = a[i]
+            for j in range(i):
+                factor *= (x_res - x[j])
+            res += factor
+        return sympy.simplify(res)
+
+    def newton_second(x, y):
+        x_res = sympy.symbols('x')
+        a = poly_newton_coefficient(x[::-1], y[::-1])
+        n = len(a)
+        res = 0
+        for i in range(n):
+            factor = a[i]
+            for j in range(n - 1, n - 1 - i, -1):
+                factor *= (x_res - x[j])
+            res += factor
+        return sympy.simplify(res)
+
+    if forward_or_backward == 'forward':
+        res = newton_first(x_values, y_values)
+        interpol = [res.subs(x0, x_values[i]) for i in range(n_res)]
+        print("Интерполяция методом Ньютона вперед:")
+        print_table(x_values, y_values, interpol)
+        print("Интерполяционный многочлен Ньютона:", res)
+    elif forward_or_backward == 'backward':
+        res = newton_second(x_values, y_values)
+        interpol = [res.subs(x0, x_values[i]) for i in range(n_res)]
+        print("Интерполяция методом Ньютона назад:")
+        print_table(x_values, y_values, interpol)
+        print("Интерполяционный многочлен Ньютона:", res)
+
+    return x_values, y_values, interpol 
+    
+    #Интерполяция (Numpy)
+    
+    def numpy_interpolation(x_values, y_values):
+    return x_values, y_values, np.interp(x_values, x_values, y_values)
+    
+    #Апроксимация линейной функцией
+    
+    def linear_function_approximation(x_values, y_values):
+    n = len(x_values)
+    xx = sympy.Symbol('x')
+    s1, s2, s3, s4 = 0, 0, 0, 0
+    for i in range(n):
+        s1 += x_values[i] ** 2
+        s2 += x_values[i]
+        s3 += x_values[i] * y_values[i]
+        s4 += y_values[i]
+
+    c1 = (s3 * n - s2 * s4) / (s1 * n - s2 ** 2)
+    c0 = (s1 * s4 - s2 * s3) / (s1 * n - s2 ** 2)
+    yy = sympy.simplify(c0 + c1 * xx)
+
+    f_values = [yy.subs(xx, x_values[i]) for i in range(n)]
+
+    print("Апроксимация линейной функцией:")
+    print_table(x_values, y_values, f_values)
+    print("Вид апроксимирующей функции:", yy)
+    print("Величина дисперсии:", math.sqrt(sum([(y_values[i] - f_values[i]) ** 2 for i in range(len(x_values))])))
+
+    return x_values, y_values, f_values
+    
+    #Апроксимация квадратичной функцией
+    
+    def quadratic_function_approximation(x_values, y_values, need_to_print_table):
+    n = len(x_values)
+    xx = sympy.Symbol('x')
+    s1, s2, s3, s4, s5, s6, s7 = 0, 0, 0, 0, 0, 0, 0
+    for i in range(n):
+        s1 += x_values[i] ** 4
+        s2 += x_values[i] ** 3
+        s3 += x_values[i] ** 2
+        s4 += x_values[i]
+        s5 += x_values[i] ** 2 * y_values[i]
+        s6 += x_values[i] * y_values[i]
+        s7 += y_values[i]
+
+    a = [[0] * 3 for _ in range(3)]
+    b = [0] * 3
+    a[0][0], a[0][1], a[0][2] = s1, s2, s3
+    a[1][0], a[1][1], a[1][2] = s2, s3, s4
+    a[2][0], a[2][1], a[2][2] = s3, s4, n
+    b[0], b[1], b[2] = s5, s6, s7
+
+    c2, c1, c0 = list(np.linalg.solve(a, b))
+    yy = sympy.simplify(c0 + c1 * xx + c2 * xx ** 2)
+
+    f_values = [yy.subs(xx, x_values[i]) for i in range(n)]
+
+    print("Апроксимация квадратичной функцией:")
+    if need_to_print_table:
+        print_table(x_values, y_values, f_values)
+    print("Вид апроксимирующей функции:", yy)
+    print("Величина дисперсии:", math.sqrt(sum([(y_values[i] - f_values[i]) ** 2 for i in range(len(x_values))])))
+
+    return x_values, y_values, f_values
+    
+    #Апроксимация функцией нормального распределения
+    
+    def normal_distribution_approximation(x_values, y_values):
+    n = len(x_values)
+
+    def t3(value):
+        return s.subs({a: value[0], b: value[1], c: value[2]})
+
+    x, y, a, b, c = sympy.symbols('x y a b c')
+    expr = (y - a * sympy.exp(-(x - b) ** 2 / (2 * c ** 2))) ** 2
+
+    s = sympy.sympify(0)
+    my = max(y_values)
+    mx = x_values[y_values.index(my)]
+    length = abs(max(x_values) - min(x_values))
+
+    for i in range(len(x_values)):
+        s += expr.subs({x: x_values[i], y: y_values[i]})
+
+    bnds = ((-np.inf, np.inf), (-np.inf, np.inf), (0, None))
+    res = scipy.optimize.minimize(t3, [my, mx, length], bounds=bnds)
+
+    yy = sympy.simplify(res.x[0] * sympy.exp(-(x - res.x[1]) ** 2 / (2 * res.x[2] ** 2)))
+    f_values = [yy.subs(x, x_values[i]) for i in range(n)]
+
+    print("Апроксимация функцией нормального распределения:")
+    print_table(x_values, y_values, f_values)
+    print("Вид апроксимирующей функции:", yy)
+    print("Величина дисперсии:", math.sqrt(sum([(y_values[i] - f_values[i]) ** 2 for i in range(len(x_values))])))
+
+    return x_values, y_values, f_values
+    
+    #Апроксимация Numpy
+    
+    def numpy_approximation(x_values, y_values):
+    def genetate_poly(coef):
+        coef.reverse()
+        def poly(x):
+            return sum(coef[i]*x**i for i in range(len(coef)))
+        return poly
+    f = genetate_poly(list(np.polynomial.polynomial.Polynomial.fit(x_values, y_values, 10).coef))
+    f_values = [f(x) for x in x_values]
+    return x_values, y_values, f_values
+    
+#Задание 2.1
+    
+plt.figure(figsize=(24, 14))
+
+# Интерполяция методом Лагранжа
+x_lst_1, y_lst_1, interpol_lst_1 = lagrx(x_list, y_list)
+plt.subplot(2, 4, 1)
+plt.scatter(x_lst_1, y_lst_1, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_1, interpol_lst_1, c='g', label='Интерполир. ф-ия')
+plt.title("Интерполяция методом Лагранжа (собственная функция)", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Интерполяция методом Ньютона (вперед)
+x_lst_2, y_lst_2, interpol_lst_2 = newtons_interpolation(x_list, y_list, 'forward')
+plt.subplot(2, 4, 2)
+plt.scatter(x_lst_2, y_lst_2, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_2, interpol_lst_2, c='g', label='Интерполир. ф-ия')
+plt.title("Интерполяция методом Ньютона (вперед)", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Интерполяция методом Ньютона (назад)
+x_lst_3, y_lst_3, interpol_lst_3 = newtons_interpolation(x_list, y_list, 'backward')
+plt.subplot(2, 4, 3)
+plt.scatter(x_lst_3, y_lst_3, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_3, interpol_lst_3, c='g', label='Интерполир. ф-ия')
+plt.title("Интерполяция методом Ньютона (назад)", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Апроксимация линейной функцией
+x_lst_4, y_lst_4, interpol_lst_4 = linear_function_approximation(x_list, y_list)
+plt.subplot(2, 4, 4)
+plt.scatter(x_lst_4, y_lst_4, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_4, interpol_lst_4, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация линейной функцией", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Апроксимация квадратичной функцией
+x_lst_5, y_lst_5, interpol_lst_5 = quadratic_function_approximation(x_list, y_list, True)
+plt.subplot(2, 4, 5)
+plt.scatter(x_lst_5, y_lst_5, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_5, interpol_lst_5, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация квадратичной функцией", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Апроксимация функцией нормального распределения
+x_lst_6, y_lst_6, interpol_lst_6 = normal_distribution_approximation(x_list, y_list)
+plt.subplot(2, 4, 6)
+plt.scatter(x_lst_6, y_lst_6, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_6, interpol_lst_6, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация функцией нормального распределения", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Интерполяция c помощью Numpy
+x_lst_7, y_lst_7, interpol_lst_7 = numpy_interpolation(x_list, y_list)
+plt.subplot(2, 4, 7)
+plt.scatter(x_lst_7, y_lst_7, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_7, interpol_lst_7, c='g', label='Интерполир. ф-ия')
+plt.title("Интерполяция с помощью numpy", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+# Апроксимация c помощью Numpy
+x_lst_8, y_lst_8, interpol_lst_8 = numpy_approximation(x_list, y_list)
+plt.subplot(2, 4, 8)
+plt.scatter(x_lst_8, y_lst_8, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst_8, interpol_lst_8, c='g', label='Интерполир. ф-ия')
+plt.title("Апроксимация с помощью numpy", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+
+plt.subplots_adjust(wspace=0.5, hspace=0.6)
+plt.show()
+
+#Задание 2.2
+
+generate_csv_2()
+x_test, y_test = read_csv('task2.2.csv')
+
+x_lst, y_lst, interpol_lst = quadratic_function_approximation(x_test, y_test, False)
+
+d_lst = [(y_lst[i] - interpol_lst[i]) / y_lst[i] for i in range(len(x_lst))]
+
+table = PrettyTable()
+table.add_column("x[i]", x_lst)
+table.add_column("y[i]", y_lst)
+table.add_column("f[i]", interpol_lst)
+table.add_column("d[i]", d_lst)
+
+plt.scatter(x_lst, y_lst, c='r', s=3, label='Исходная функция')
+plt.plot(x_lst, interpol_lst, c='g', label='Апрокс. ф-ия')
+
+plt.title("Акпроксимация квадратичной функцией")
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+print()
+plt.show()
+print()
+print(table)
+print()
+
+m = len(x_lst) / 100  # количество каналов дискретизации
+k = (max(d_lst) - min(d_lst)) / m  # цена канала
+
+gates_for_channel = [[min(d_lst) + k * i, min(d_lst) + k * (i + 1)] for i in range(int(m))]
+
+result = {}
+
+for i in range(len(gates_for_channel)):
+    for d_i in d_lst:
+        if gates_for_channel[i][0] <= d_i <= gates_for_channel[i][1]:
+            if i not in result:
+                result[i] = 0
+            result[i] += 1
+
+
+x, y, interpol = normal_distribution_approximation(list(result.keys()), list(result.values()))
+plt.scatter(x, y, c='r', s=3, label='Исходная функция')
+plt.plot(x, interpol, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация функцией нормального распределения", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+print()
+plt.show()
+
+#Задание 2.3
+
+from google.colab import files
+
+uploaded = files.upload()
+
+for fn in uploaded.keys():
+    print("User uploaded file «{name}» with length {length} bytes".format(name=fn, length=len(uploaded[fn])))
+    
+def read_new_csv(path_to_file):
+    x = []
+    y = []
+    with open(path_to_file, encoding='UTF-8') as csv_file:
+        reader = csv.reader(csv_file, delimiter=";")
+        for row in reader:
+            y.append(float(row[2]))
+    return [i for i in range(1, len(y) + 1)], y
+    
+x_coord, y_coord = read_new_csv('dollar.txt')
+x, y, interpol = normal_distribution_approximation(x_coord, y_coord)
+plt.scatter(x, y, c='r', s=3, label='Исходная функция')
+plt.plot(x, interpol, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация функцией нормального распределения", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+plt.show()
+
+#Задание 2.4
+
+x_new, y_new = read_new_csv('dollar.txt')
+
+x_list, y_list, interpol_list = quadratic_function_approximation(x_new, y_new, False)
+
+d_list = [(y_list[i] - interpol_list[i]) / y_list[i] for i in range(len(x_list))]
+
+table = PrettyTable()
+table.add_column("x[i]", x_list)
+table.add_column("y[i]", y_list)
+table.add_column("f[i]", interpol_list)
+table.add_column("d[i]", d_list)
+
+plt.scatter(x_list, y_list, c='r', s=3, label='Исходная функция')
+plt.plot(x_list, interpol_list, c='g', label='Апрокс. ф-ия')
+
+plt.title("Акпроксимация квадратичной функцией")
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+print()
+plt.show()
+
+#Задание 2.5
+
+m = len(x_list) / 100  # количество каналов дискретизации
+k = (max(d_list) - min(d_list)) / m  # цена канала
+
+gates_for_channel = [[min(d_list) + k * i, min(d_list) + k * (i + 1)] for i in range(int(m))]
+
+result = {}
+
+for i in range(len(gates_for_channel)):
+    for d_i in d_list:
+        if gates_for_channel[i][0] <= d_i <= gates_for_channel[i][1]:
+            if i not in result:
+                result[i] = 0
+            result[i] += 1
+
+
+x, y, interpol = linear_function_approximation(x_list, y_list)
+plt.figure(figsize=(24, 14))
+plt.subplot(1, 3, 1)
+plt.scatter(x, y, c='r', s=3, label='Исходная функция')
+plt.plot(x, interpol, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация линейной функцией", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+x, y, interpol = quadratic_function_approximation(x_list, y_list, True)
+plt.subplot(1, 3, 2)
+plt.scatter(x, y, c='r', s=3, label='Исходная функция')
+plt.plot(x, interpol, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация квадратичной функцией", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+x, y, interpol = normal_distribution_approximation(x_list, y_list)
+plt.subplot(1, 3, 3)
+plt.scatter(x, y, c='r', s=3, label='Исходная функция')
+plt.plot(x, interpol, c='g', label='Апрокс. ф-ия')
+plt.title("Акпроксимация функцией нормального распределения", y=1.1)
+plt.xlabel("Координата x")
+plt.ylabel("Координата y")
+plt.legend(loc='best')
+
+plt.show()
+    
+    
+    
+    
+    
